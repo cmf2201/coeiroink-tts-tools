@@ -50,7 +50,10 @@ def resolve_uuid(style_id: int, speakers: list) -> str:
     raise ValueError(f"styleId {style_id} not found")
 
 
-def synthesize(text: str, speaker_uuid: str, style_id: int) -> bytes:
+DEFAULT_SPEED = 0.85
+
+
+def synthesize(text: str, speaker_uuid: str, style_id: int, speed: float) -> bytes:
     def post(url, body):
         req = urllib.request.Request(url, data=json.dumps(body).encode(),
                                      headers={"Content-Type": "application/json"})
@@ -69,7 +72,7 @@ def synthesize(text: str, speaker_uuid: str, style_id: int) -> bytes:
         "prePhonemeLength": 0.1,
         "postPhonemeLength": 0.1,
         "outputSamplingRate": 44100,
-        "speedScale": 1.0,
+        "speedScale": speed,
     })
 
 
@@ -77,7 +80,7 @@ def strip_html(html: str) -> str:
     return re.sub(r"<[^>]+>", "", html).strip()
 
 
-def process_pending(speaker_uuid: str, style_id: int) -> int:
+def process_pending(speaker_uuid: str, style_id: int, speed: float) -> int:
     query = f'note:"{NOTE_TYPE}" "{SENTENCE_FIELD}:_*" "{AUDIO_FIELD}:"'
     note_ids = anki("findNotes", query=query)
     if not note_ids:
@@ -95,7 +98,7 @@ def process_pending(speaker_uuid: str, style_id: int) -> int:
         print(f"Generating: {sentence[:60]}{'…' if len(sentence) > 60 else ''}")
 
         try:
-            audio = synthesize(sentence, speaker_uuid, style_id)
+            audio = synthesize(sentence, speaker_uuid, style_id, speed)
         except urllib.error.URLError:
             print("  Error: cannot reach COEIROINK. Is it running?", file=sys.stderr)
             return count
@@ -125,6 +128,8 @@ def main():
                         help="Keep running and check every 5 seconds")
     parser.add_argument("--style", type=int, default=None,
                         help="COEIROINK styleId (default: first available)")
+    parser.add_argument("--speed", type=float, default=DEFAULT_SPEED,
+                        help=f"speech speed scale (default: {DEFAULT_SPEED})")
     args = parser.parse_args()
 
     try:
@@ -146,7 +151,7 @@ def main():
                         if s["speakerUuid"] == speaker_uuid)
     style_name = next(st["styleName"] for s in speakers
                       for st in s["styles"] if st["styleId"] == style_id)
-    print(f"Voice: {speaker_name} / {style_name} (styleId={style_id})")
+    print(f"Voice: {speaker_name} / {style_name} (styleId={style_id}, speed={args.speed})")
     print(f"Note type: {NOTE_TYPE}")
     print(f"Fields: '{SENTENCE_FIELD}' → '{AUDIO_FIELD}'\n")
 
@@ -154,14 +159,14 @@ def main():
         print("Watching for new cards… (Ctrl+C to stop)\n")
         try:
             while True:
-                count = process_pending(speaker_uuid, style_id)
+                count = process_pending(speaker_uuid, style_id, args.speed)
                 if count:
                     print(f"Processed {count} card(s).\n")
                 time.sleep(5)
         except KeyboardInterrupt:
             print("\nStopped.")
     else:
-        count = process_pending(speaker_uuid, style_id)
+        count = process_pending(speaker_uuid, style_id, args.speed)
         print(f"\nDone. Processed {count} card(s).")
 
 

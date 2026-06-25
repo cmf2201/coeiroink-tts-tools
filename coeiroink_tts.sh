@@ -2,12 +2,13 @@
 # Usage: ./coeiroink_tts.sh <japanese_text> [output.wav] [styleId]
 #        ./coeiroink_tts.sh --list   (show available speakers and styleIds)
 #
-# Override speaker via env vars:
-#   COEIROINK_UUID=<uuid> COEIROINK_STYLE=<styleId> ./coeiroink_tts.sh <text>
+# Override speaker/speed via env vars:
+#   COEIROINK_UUID=<uuid> COEIROINK_STYLE=<styleId> COEIROINK_SPEED=0.85 ./coeiroink_tts.sh <text>
 
 API="http://127.0.0.1:50032"
 SPEAKER_UUID="${COEIROINK_UUID:-3c37646f-3881-5374-2a83-149267990abc}"
 STYLE_ID="${3:-${COEIROINK_STYLE:-0}}"
+SPEED="${4:-${COEIROINK_SPEED:-0.85}}"
 
 if [[ "$1" == "--list" ]]; then
   curl -s "$API/v1/speakers" | python3 -c "
@@ -29,10 +30,10 @@ fi
 TEXT="$1"
 OUTPUT="${2:-$(echo "$TEXT" | tr -d '[:space:]').wav}"
 
-python3 - "$TEXT" "$OUTPUT" "$SPEAKER_UUID" "$STYLE_ID" "$API" <<'PYEOF'
+python3 - "$TEXT" "$OUTPUT" "$SPEAKER_UUID" "$STYLE_ID" "$API" "$SPEED" <<'PYEOF'
 import json, sys, urllib.request, urllib.error
 
-text, output, default_uuid, style_id, api = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4]), sys.argv[5]
+text, output, default_uuid, style_id, api, speed = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4]), sys.argv[5], float(sys.argv[6])
 
 def post_json(url, body):
     req = urllib.request.Request(
@@ -76,7 +77,7 @@ audio = post_json(f"{api}/v1/synthesis", {
     "prePhonemeLength": 0.1,
     "postPhonemeLength": 0.1,
     "outputSamplingRate": 44100,
-    "speedScale": 1.0,
+    "speedScale": speed,
 })
 
 with open(output, "wb") as f:

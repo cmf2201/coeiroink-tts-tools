@@ -20,6 +20,7 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 COEIROINK_API = "http://127.0.0.1:50032"
+DEFAULT_SPEED = 0.85
 _cache: dict[str, bytes] = {}
 
 
@@ -35,7 +36,7 @@ def resolve_uuid(style_id: int, speakers: list[dict]) -> str:
     raise ValueError(f"styleId {style_id} not found in any loaded speaker")
 
 
-def synthesize(text: str, speaker_uuid: str, style_id: int) -> bytes:
+def synthesize(text: str, speaker_uuid: str, style_id: int, speed: float) -> bytes:
     def post(url: str, body: dict) -> bytes:
         req = urllib.request.Request(
             url,
@@ -57,12 +58,12 @@ def synthesize(text: str, speaker_uuid: str, style_id: int) -> bytes:
         "prePhonemeLength": 0.1,
         "postPhonemeLength": 0.1,
         "outputSamplingRate": 44100,
-        "speedScale": 1.0,
+        "speedScale": speed,
     })
     return audio
 
 
-def make_handler(style_id: int, speakers: list[dict]):
+def make_handler(style_id: int, speakers: list[dict], speed: float):
     speaker_uuid = resolve_uuid(style_id, speakers)
     speaker_name = next(s["speakerName"] for s in speakers
                         if s["speakerUuid"] == speaker_uuid)
@@ -87,10 +88,10 @@ def make_handler(style_id: int, speakers: list[dict]):
                 self.send_error(400, "Missing ?term= parameter")
                 return
 
-            cache_key = f"{term}:{style_id}"
+            cache_key = f"{term}:{style_id}:{speed}"
             if cache_key not in _cache:
                 try:
-                    _cache[cache_key] = synthesize(term, speaker_uuid, style_id)
+                    _cache[cache_key] = synthesize(term, speaker_uuid, style_id, speed)
                 except urllib.error.URLError:
                     self.send_error(503, "COEIROINK engine not reachable")
                     return
@@ -114,6 +115,8 @@ def main():
     parser.add_argument("--port", type=int, default=5050)
     parser.add_argument("--style", type=int, default=None,
                         help="styleId to use (default: first available)")
+    parser.add_argument("--speed", type=float, default=DEFAULT_SPEED,
+                        help=f"speech speed scale (default: {DEFAULT_SPEED})")
     args = parser.parse_args()
 
     try:
@@ -132,9 +135,9 @@ def main():
         args.style = speakers[0]["styles"][0]["styleId"]
         print(f"\nNo --style specified, defaulting to styleId={args.style}")
 
-    handler = make_handler(args.style, speakers)
+    handler = make_handler(args.style, speakers, args.speed)
     server = HTTPServer(("127.0.0.1", args.port), handler)
-    print(f"\nListening on http://127.0.0.1:{args.port}/")
+    print(f"\nListening on http://127.0.0.1:{args.port}/ (speed={args.speed})")
     print(f"Yomitan URL: http://localhost:{args.port}/?term={{term}}&reading={{reading}}")
     print("Press Ctrl+C to stop.\n")
     try:
